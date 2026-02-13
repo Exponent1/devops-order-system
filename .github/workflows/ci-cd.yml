@@ -43,4 +43,4 @@ jobs:
         with:
           context: ./inventory-service
           push: true
-          tags: kaustav/inventory-service:latest
+          tags: kaustavacharya/inventory-service:latest
