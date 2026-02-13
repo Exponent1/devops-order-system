@@ -1,5 +1,19 @@
 # DevOps Order System — CI/CD Hands-on Exercise
 
+```mermaid
+flowchart LR
+  Client["Client"] -->|HTTP| Gateway["NGINX Gateway\n(gateway)"]
+  Gateway -->|reverse-proxy| Order["order-service\nHTTP:5000"]
+  Order -->|POST /reserve| InventoryAPI["inventory-service\nHTTP:5001"]
+  InventoryAPI -->|atomic Lua reserve| Redis[("Redis (inventory-db)")]
+  Order -->|insert order| Postgres[("Postgres (order-db)")]
+  Order -->|publish `order_created`| Rabbit[("RabbitMQ")]
+  Rabbit -->|consume event| InventoryConsumer["inventory-service\nconsumer (read-only)"]
+  Order -->|metrics| Prom["Prometheus"]
+  InventoryAPI -->|metrics| Prom
+  Prom --> Graf["Grafana"]
+```
+
 What this application does
 - Accepts HTTP order requests through an NGINX gateway to `order-service`.
 - `order-service` attempts a stock reservation via `inventory-service`'s `/reserve` endpoint before inserting an order into Postgres.
