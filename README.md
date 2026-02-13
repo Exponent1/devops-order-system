@@ -40,17 +40,32 @@ Quickstart (minimal, reproducible)
 Prerequisites
 - Docker and Docker Compose (v2) installed and running.
 
-1) Create a local `.env` file in the project root (example — do NOT commit):
+1) Create a local `.env` file by copying the example and edit values (DO NOT COMMIT):
 
-```env
-POSTGRES_USER=admin
-POSTGRES_PASSWORD=password123
-POSTGRES_DB=orders
-DB_URL=postgres://admin:password123@order-db:5432/orders
-BROKER_HOST=rabbitmq
-BROKER_PORT=5672
-REDIS_HOST=inventory-db
-DEFAULT_STOCK=100
+```bash
+# Unix / macOS:
+cp .env.example .env
+
+# Windows (PowerShell):
+Copy-Item .env.example .env
+```
+
+If you accidentally committed a `.env` with secrets, untrack it and commit the cleanup:
+
+```bash
+# Stop tracking the file but keep it locally
+git rm --cached .env
+git add .gitignore .env.example
+git commit -m "Add .env.example and stop tracking .env"
+```
+
+To remove `.env` from repository history (rewrites history; coordinate with your team), use `git filter-repo` or the BFG Repo-Cleaner. Example with `git filter-repo`:
+
+```bash
+# install git-filter-repo first (system package / pip)
+git filter-repo --path .env --invert-paths
+# then force-push rewritten history
+git push --force --all
 ```
 
 2) Start the stack (from the repository root):

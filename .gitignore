@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+ 
+# dotenv files (do not commit .env containing secrets)
+.env
+.env.local
