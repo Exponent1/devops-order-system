@@ -4,7 +4,7 @@
 # os: Access environment variables
 # json: Parse message bodies
 
-from flask import Flask, jsonify, Response
+from flask import Flask, jsonify, Response, request
 from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST
 processed_counter = Counter('orders_processed_total', 'Orders processed from RabbitMQ')
 import redis
@@ -22,32 +22,38 @@ r = redis.Redis(
 )
 
 
-# Connect to RabbitMQ with retry logic
-import time
-# Make retry/backoff configurable for faster tests and flexible deployments
-# BROKER_MAX_RETRIES: number of attempts (default 10)
-# BROKER_RETRY_BASE: base wait seconds multiplier (default 2)
-max_retries = int(os.environ.get("BROKER_MAX_RETRIES", 10))
-retry_base = int(os.environ.get("BROKER_RETRY_BASE", 2))
-broker_host = os.environ.get("BROKER_HOST", "rabbitmq")
-broker_port = int(os.environ.get("BROKER_PORT", 5672))
+# RabbitMQ connection will be created lazily to avoid blocking imports (helpful for tests/CI)
+connection = None
+channel = None
 
-for attempt in range(max_retries):
-    try:
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(
-                host=broker_host,
-                port=broker_port
+def connect_broker(max_retries: int = None, retry_base: int = None):
+    """Establish a blocking connection to RabbitMQ and return a channel.
+    This is intentionally lazy so importing the module does not attempt network calls.
+    """
+    global connection, channel
+    if channel is not None and connection is not None:
+        return channel
+
+    import time
+    # Make retry/backoff configurable for faster tests and flexible deployments
+    max_retries = int(max_retries or os.environ.get("BROKER_MAX_RETRIES", 10))
+    retry_base = int(retry_base or os.environ.get("BROKER_RETRY_BASE", 2))
+    broker_host = os.environ.get("BROKER_HOST", "rabbitmq")
+    broker_port = int(os.environ.get("BROKER_PORT", 5672))
+
+    for attempt in range(max_retries):
+        try:
+            connection = pika.BlockingConnection(
+                pika.ConnectionParameters(host=broker_host, port=broker_port)
             )
-        )
-        channel = connection.channel()
-        channel.queue_declare(queue='order_created')
-        break
-    except pika.exceptions.AMQPConnectionError:
-        wait = retry_base * (attempt + 1)
-        print(f"[inventory-service] RabbitMQ not ready, retrying in {wait}s...")
-        time.sleep(wait)
-else:
+            channel = connection.channel()
+            channel.queue_declare(queue='order_created')
+            return channel
+        except Exception as e:
+            # don't crash import; surface informative logs and retry
+            wait = retry_base * (attempt + 1)
+            print(f"[inventory-service] RabbitMQ not ready ({e}), retrying in {wait}s...")
+            time.sleep(wait)
     raise RuntimeError("[inventory-service] Could not connect to RabbitMQ after retries.")
 
 # Callback to handle incoming messages
@@ -66,11 +72,11 @@ def callback(ch, method, properties, body):
 def metrics():
     return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
-channel.basic_consume(
-    queue='order_created',
-    on_message_callback=callback,
-    auto_ack=True
-)
+def start_consumer():
+    """Start consuming messages from RabbitMQ. Called when running the service, not on import."""
+    ch = connect_broker()
+    ch.basic_consume(queue='order_created', on_message_callback=callback, auto_ack=True)
+    ch.start_consuming()
 
 @app.route("/inventory/<item>", methods=["GET"])
 def get_inventory(item):
@@ -127,4 +133,4 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.start()
     print("Waiting for orders...")
-    channel.start_consuming()
+    start_consumer()
