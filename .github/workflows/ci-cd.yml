@@ -29,7 +29,7 @@ jobs:
           pytest
       - name: Test inventory-service
         run: |
-          cd ../inventory-service
+          cd inventory-service
           pytest
 
   build-and-push:
